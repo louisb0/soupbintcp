@@ -3,9 +3,9 @@ A C++ implementation of NASDAQ's SoupBinTCP protocol defined at [https://www.nas
 
 ## Examples
 
-See [examples/server.cpp] and [examples/client.cpp] for more examples.
+These are the current simple examples prone to change as the project evolves.
 
-**Server:**
+### Server
 
 ```cpp
 #include <soupbin/server.hpp>
@@ -62,7 +62,7 @@ int main() {
 }
 ```
 
-**Client:**
+### Client
 
 ```cpp
 #include <soupbin/client.hpp>
