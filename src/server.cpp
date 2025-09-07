@@ -4,12 +4,15 @@
 
 #include "detail/assert.hpp"
 
+#include <cerrno>
 #include <system_error>
+#include <utility>
 
 #include <fcntl.h>
 #include <netdb.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 namespace soupbin {
 

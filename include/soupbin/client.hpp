@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <expected>
 #include <memory>
 #include <span>
+#include <string>
 #include <system_error>
 
 #include <sys/types.h>

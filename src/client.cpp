@@ -7,15 +7,15 @@
 
 #include <algorithm>
 #include <array>
-#include <cstring>
+#include <cerrno>
 #include <memory>
 #include <utility>
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/uio.h>
+#include <unistd.h>
 
 namespace soupbin {
 
