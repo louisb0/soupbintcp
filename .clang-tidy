@@ -1,0 +1,22 @@
+Checks:
+  - performance-*
+
+  - bugprone-*
+  - -bugprone-easily-swappable-parameters
+
+  - readability-*
+  - -readability-identifier-length
+  - -readability-function-cognitive-complexity
+
+  - modernize-*
+  - -modernize-use-trailing-return-type
+
+  - cppcoreguidelines-*
+  - -cppcoreguidelines-avoid-do-while
+  - -cppcoreguidelines-pro-bounds-constant-array-index
+  - -cppcoreguidelines-pro-type-reinterpret-cast
+  - -cppcoreguidelines-pro-type-vararg
+  - -cppcoreguidelines-macro-usage
+  - -cppcoreguidelines-pro-bounds-array-to-pointer-decay
+  - -cppcoreguidelines-pro-bounds-pointer-arithmetic
+WarningsAsErrors: '*'

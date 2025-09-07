@@ -1,0 +1,10 @@
+# Devenv
+.devenv*
+devenv.local.nix
+.direnv
+.pre-commit-config.yaml
+
+# C++
+build/
+.cache/
+compile_commands.json

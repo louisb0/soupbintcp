@@ -1,0 +1,133 @@
+#pragma once
+
+#include "soupbin/client.hpp"
+
+#include "detail/assert.hpp"
+#include "detail/util.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string_view>
+
+#include <netinet/in.h>
+
+namespace soupbin::detail {
+
+// -------------- types --------------
+
+static constexpr uint8_t username_len = 6;
+static constexpr uint8_t password_len = 10;
+static constexpr uint8_t session_id_len = 10;
+static constexpr uint8_t sequence_num_len = 20;
+
+enum message_type : uint8_t {
+    // server <-> client
+    mt_debug = '+',
+    mt_unsequenced = 'U',
+
+    // server -> client
+    mt_login_accepted = 'A',
+    mt_login_rejected = 'J',
+    mt_sequenced = 'S',
+    mt_server_heartbeat = 'H',
+    mt_end_of_session = 'Z',
+
+    // client -> server
+    mt_login_request = 'L',
+    mt_logout_request = 'O',
+    mt_client_heartbeat = 'R',
+};
+
+enum login_reject_code : uint8_t {
+    rej_not_authorized = 'A',
+    rej_no_session = 'S',
+};
+
+// -------------- messages --------------
+// NOLINTBEGIN(*-c-arrays)
+
+struct __attribute__((packed)) msg_header {
+    uint16_t length;
+    message_type type;
+};
+
+struct __attribute__((packed)) msg_debug {
+    msg_header hdr;
+    char data[];
+};
+
+struct __attribute__((packed)) msg_login_request {
+    msg_header hdr;
+    char username[username_len];
+    char password[password_len];
+    char session_id[session_id_len];
+    char sequence_num[sequence_num_len];
+
+    [[nodiscard]] static msg_login_request build(const connect_config &cfg) {
+        ASSERT(!cfg.username.empty() && cfg.username.length() <= detail::username_len);
+        ASSERT(!cfg.password.empty() && cfg.password.length() <= detail::password_len);
+        ASSERT(!cfg.session_id.empty() && cfg.session_id.length() <= detail::session_id_len);
+        ASSERT(!cfg.sequence_num.empty() && cfg.sequence_num.length() <= detail::sequence_num_len);
+
+        detail::msg_login_request msg{};
+        msg.hdr.length = htons(sizeof(msg) - sizeof(msg.hdr));
+        msg.hdr.type = detail::mt_login_request;
+        detail::pad_field_left(msg.username, detail::username_len, cfg.username);
+        detail::pad_field_left(msg.password, detail::password_len, cfg.password);
+        detail::pad_field_right(msg.session_id, detail::session_id_len, cfg.session_id);
+        detail::pad_field_right(msg.sequence_num, detail::sequence_num_len, cfg.sequence_num);
+
+        return msg;
+    }
+
+    [[nodiscard]] std::string_view sv_username() {
+        auto sv = std::string_view(username, username_len);
+        return sv.substr(0, sv.find_last_not_of(' ') + 1);
+    }
+
+    [[nodiscard]] std::string_view sv_password() {
+        auto sv = std::string_view(password, password_len);
+        return sv.substr(0, sv.find_last_not_of(' ') + 1);
+    }
+};
+
+struct __attribute__((packed)) msg_login_accepted {
+    msg_header hdr;
+    char session_id[session_id_len];
+    char sequence_num[sequence_num_len];
+
+    [[nodiscard]] static msg_login_accepted build(const msg_login_request *req) {
+        msg_login_accepted msg{};
+        msg.hdr.length = htons(sizeof(msg) - sizeof(msg.hdr));
+        msg.hdr.type = mt_login_accepted;
+        std::memcpy(msg.session_id, req->session_id, session_id_len);
+        std::memcpy(msg.sequence_num, req->sequence_num, sequence_num_len);
+
+        return msg;
+    }
+};
+
+struct __attribute__((packed)) msg_login_rejected {
+    msg_header hdr;
+    login_reject_code reason;
+
+    [[nodiscard]] static msg_login_rejected build(login_reject_code reason) {
+        msg_login_rejected msg{};
+        msg.hdr.length = htons(sizeof(msg) - sizeof(msg.hdr));
+        msg.hdr.type = mt_login_rejected;
+        msg.reason = reason;
+
+        return msg;
+    }
+};
+
+// NOLINTEND(*-c-arrays)
+// -------------- bounds --------------
+
+static inline constexpr size_t max_client_message_size = std::max({ sizeof(msg_debug), sizeof(msg_login_request) });
+static inline constexpr size_t max_server_message_size = std::max({ sizeof(msg_debug), sizeof(msg_login_accepted), sizeof(msg_login_rejected) });
+static inline constexpr size_t max_message_size = std::max({ max_client_message_size, max_server_message_size });
+
+} // namespace soupbin::detail
