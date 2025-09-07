@@ -1,0 +1,34 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 0
+AccessModifierOffset: -4
+NamespaceIndentation: Inner
+Cpp11BracedListStyle: false
+
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^[<"]soupbin/'
+    Priority: 1
+    SortPriority: 1
+    CaseSensitive: true
+
+  - Regex: '^"detail/'
+    Priority: 2
+    SortPriority: 2
+    CaseSensitive: true
+
+  - Regex: '^<[^.]*>$'
+    Priority: 3
+    SortPriority: 3
+    CaseSensitive: true
+
+  - Regex: '^<.*\.h>$'
+    Priority: 4
+    SortPriority: 4
+    CaseSensitive: true
+
+  - Regex: '.*'
+    Priority: 6
+    SortPriority: 6
+    CaseSensitive: true
