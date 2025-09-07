@@ -23,7 +23,7 @@ int main() {
 
     if (!client) {
         const auto &err = client.error();
-        std::cout << "Could not connect to server [" << err.category().name() << "]: " << err.message() << '\n';
+        std::cout << "Could not connect to server - [" << err.category().name() << "]: " << err.message() << '\n';
         return EXIT_FAILURE;
     }
 

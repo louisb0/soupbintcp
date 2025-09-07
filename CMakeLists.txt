@@ -27,7 +27,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-add_library(soupbin STATIC src/server.cpp src/client.cpp)
+add_library(soupbin STATIC src/server.cpp src/client.cpp src/detail/client_manager.cpp)
 target_include_directories(soupbin PUBLIC include/ PRIVATE src/)
 target_link_libraries(soupbin PUBLIC spdlog::spdlog)
 

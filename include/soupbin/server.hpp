@@ -12,6 +12,14 @@
 
 namespace soupbin {
 
+#ifndef SOUPBIN_NEW_CLIENTS_PER_TICK
+#define SOUPBIN_NEW_CLIENTS_PER_TICK 4
+#endif
+
+#ifndef SOUPBIN_CLIENTS_PER_TICK
+#define SOUPBIN_CLIENTS_PER_TICK 16
+#endif
+
 // NOTE: The server is single-threaded. It is expected for these to be non-blocking and
 // for tick_handler to be the most compute intensive callback.
 using auth_handler = std::function<bool(std::string_view, std::string_view)>;

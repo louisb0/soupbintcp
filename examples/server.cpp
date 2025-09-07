@@ -38,13 +38,13 @@ int main() {
 
     if (!server) {
         const auto &err = server.error();
-        std::cout << "Could not create server [" << err.category().name() << "]: " << err.message() << '\n';
+        std::cout << "Could not create server - [" << err.category().name() << "]: " << err.message() << '\n';
         return EXIT_FAILURE;
     }
 
     auto result = server->run();
     if (result) {
-        std::cout << "Server stopped with error [" << result.category().name() << "]: " << result.message() << '\n';
+        std::cout << "Server stopped with error - [" << result.category().name() << "]: " << result.message() << '\n';
         return EXIT_FAILURE;
     }
 

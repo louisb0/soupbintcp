@@ -4,6 +4,7 @@
 
 #include "detail/assert.hpp"
 #include "detail/messages.hpp"
+#include "detail/util.hpp"
 
 #include <algorithm>
 #include <array>
@@ -12,7 +13,6 @@
 #include <utility>
 
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -132,6 +132,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
         if (gai_c == EAI_SYSTEM) {
             return std::unexpected(std::error_code(errno, std::system_category()));
         }
+
         return std::unexpected(make_gai_error(gai_c));
     }
 
@@ -144,12 +145,6 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
         }
 
         if (connect(fd, it->ai_addr, it->ai_addrlen) == -1) {
-            close(fd);
-            continue;
-        }
-
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags == -1 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
             close(fd);
             continue;
         }
@@ -167,7 +162,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
     // Send login request, read reply.
     detail::msg_login_request req = detail::msg_login_request::build(cfg);
     if (send(cfd, &req, sizeof(req), 0) == -1) {
-        close(cfd);
+        detail::preserving_close(cfd);
         return std::unexpected(std::error_code(errno, std::system_category()));
     }
 
@@ -176,7 +171,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
 
     ssize_t n = recv(cfd, buf.data(), sizeof(detail::msg_header), MSG_WAITALL);
     if (n != sizeof(detail::msg_header)) {
-        close(cfd);
+        detail::preserving_close(cfd);
         return std::unexpected(std::error_code(errno, std::system_category()));
     }
 
@@ -185,7 +180,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
 
     n = ::recv(cfd, header + 1, remaining, MSG_WAITALL);
     if (n != static_cast<ssize_t>(remaining)) {
-        close(cfd);
+        detail::preserving_close(cfd);
         return std::unexpected(std::error_code(errno, std::system_category()));
     }
 
@@ -199,7 +194,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
     if (header->type == detail::mt_login_rejected) {
         auto *msg = reinterpret_cast<detail::msg_login_rejected *>(buf.data());
 
-        if (msg->reason == detail::rej_not_authorized) {
+        if (msg->reason == detail::rej_not_authorised) {
             return std::unexpected(make_soupbin_error(errc::no_such_login));
         }
 

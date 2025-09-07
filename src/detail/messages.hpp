@@ -41,7 +41,7 @@ enum message_type : uint8_t {
 };
 
 enum login_reject_code : uint8_t {
-    rej_not_authorized = 'A',
+    rej_not_authorised = 'A',
     rej_no_session = 'S',
 };
 
