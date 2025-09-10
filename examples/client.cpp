@@ -1,15 +1,13 @@
 #include <soupbin/client.hpp>
 
-#include <cerrno>
 #include <cstdlib>
-#include <cstring>
 #include <expected>
 #include <iostream>
 #include <span>
 #include <string>
 #include <system_error>
 
-#include <sys/types.h>
+#include <unistd.h>
 
 int main() {
     auto client = soupbin::connect({
@@ -23,23 +21,22 @@ int main() {
 
     if (!client) {
         const auto &err = client.error();
-        std::cout << "Could not connect to server - [" << err.category().name() << "]: " << err.message() << '\n';
+        std::cout << "Could not connect - [" << err.category().name() << "]: " << err.message() << '\n';
         return EXIT_FAILURE;
     }
 
-    std::string msg = "hello!";
-    auto data = std::as_bytes(std::span(msg));
+    while (true) {
+        client->queue_debug_msg(std::as_bytes(std::span("ping")));
 
-    ssize_t sent = client->send_debug(data);
-    if (sent == -1) {
-        std::cout << "Could not message server: " << std::strerror(errno) << '\n';
-        return EXIT_FAILURE;
+        while (auto msg = client->try_recv_msg()) {
+            std::cout << "Received: " << std::string(reinterpret_cast<const char *>(msg->data()), msg->size()) << "\n";
+        }
+
+        if (auto err = client->service()) {
+            std::cout << "Could not service - [" << err.category().name() << "]: " << err.message() << '\n';
+            return EXIT_FAILURE;
+        }
+
+        sleep(1);
     }
-
-    std::cout << "Sent " << sent << " bytes: '" << msg << "'\n";
-    std::cout << "Press Enter to exit...\n";
-
-    std::cin.get();
-
-    return EXIT_SUCCESS;
 }

@@ -19,6 +19,8 @@ enum class errc : uint8_t {
     bad_host,
     no_such_login,
     no_such_session,
+    server_heartbeat,
+    server_disconnect,
     protocol,
 };
 
@@ -45,6 +47,10 @@ struct soupbin_category_t final : std::error_category {
             return "no accounts matched the provided login";
         case errc::no_such_session:
             return "no session was found for the given login";
+        case errc::server_heartbeat:
+            return "server did not send data within heartbeat period";
+        case errc::server_disconnect:
+            return "server deliberately closed the connection";
         case errc::protocol:
             return "a message was received which did not adhere to protocol";
         default:

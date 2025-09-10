@@ -12,12 +12,24 @@
 
 namespace soupbin {
 
-#ifndef SOUPBIN_NEW_CLIENTS_PER_TICK
-#define SOUPBIN_NEW_CLIENTS_PER_TICK 4
+#ifndef SOUPBIN_S_NEW_CLIENTS_PER_TICK
+#define SOUPBIN_S_NEW_CLIENTS_PER_TICK 4
 #endif
 
-#ifndef SOUPBIN_CLIENTS_PER_TICK
-#define SOUPBIN_CLIENTS_PER_TICK 16
+#ifndef SOUPBIN_S_CLIENTS_PER_TICK
+#define SOUPBIN_S_CLIENTS_PER_TICK 16
+#endif
+
+#ifndef SOUPBIN_S_MESSAGES_PER_CLIENT
+#define SOUPBIN_S_MESSAGES_PER_CLIENT 8
+#endif
+
+#ifndef SOUPBIN_S_CLIENT_HEARTBEAT_SEC
+#define SOUPBIN_S_CLIENT_HEARTBEAT_SEC 5
+#endif
+
+#ifndef SOUPBIN_S_SERVER_HEARTBEAT_SEC
+#define SOUPBIN_S_SERVER_HEARTBEAT_SEC 15
 #endif
 
 // NOTE: The server is single-threaded. It is expected for these to be non-blocking and

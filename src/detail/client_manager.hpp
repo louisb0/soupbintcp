@@ -2,6 +2,8 @@
 
 #include "detail/partial.hpp"
 
+#include <chrono>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -11,6 +13,8 @@ struct client {
     int fd{ -1 };
     int auth_index{ -1 };
     detail::partial partial{};
+    std::chrono::steady_clock::time_point last_recv;
+    std::chrono::steady_clock::time_point last_send;
 
     [[nodiscard]] bool in_use() const noexcept {
         return fd != -1;
@@ -29,6 +33,8 @@ public:
     [[nodiscard]] client *add(int cfd) noexcept;
     void authenticate(client *c) noexcept;
     void remove(client *c) noexcept;
+
+    [[nodiscard]] std::span<client *> authenticated() noexcept;
 };
 
 } // namespace soupbin::detail

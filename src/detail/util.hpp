@@ -17,14 +17,14 @@ inline void pad_field_left(char *dst, size_t width, std::string_view src) {
     ASSERT(src.size() <= width);
 
     std::fill_n(dst, width, ' ');
-    std::ranges::copy(src, dst);
+    std::ranges::copy(src, (dst + width) - src.size());
 }
 
 inline void pad_field_right(char *dst, size_t width, std::string_view src) {
     ASSERT(src.size() <= width);
 
     std::fill_n(dst, width, ' ');
-    std::ranges::copy(src, (dst + width) - src.size());
+    std::ranges::copy(src, dst);
 }
 
 } // namespace soupbin::detail
