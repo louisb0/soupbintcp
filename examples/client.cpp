@@ -32,8 +32,8 @@ int main() {
             std::cout << "Received: " << std::string(reinterpret_cast<const char *>(msg->data()), msg->size()) << "\n";
         }
 
-        if (auto err = client->service()) {
-            std::cout << "Could not service - [" << err.category().name() << "]: " << err.message() << '\n';
+        if (auto err = client->commit()) {
+            std::cout << "Could not commit - [" << err.category().name() << "]: " << err.message() << '\n';
             return EXIT_FAILURE;
         }
 

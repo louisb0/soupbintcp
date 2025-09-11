@@ -45,7 +45,7 @@ public:
     void queue_unseq_msg(std::span<const std::byte>) noexcept;
     void queue_debug_msg(std::span<const std::byte>) noexcept;
     [[nodiscard]] std::optional<std::span<const std::byte>> try_recv_msg() noexcept;
-    [[nodiscard]] std::error_code service() noexcept;
+    [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;
 

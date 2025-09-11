@@ -64,7 +64,7 @@ public:
     void queue_unseq_msg(std::span<const std::byte> data) noexcept;
     void queue_debug_msg(std::span<const std::byte> data) noexcept;
     [[nodiscard]] std::optional<std::span<const std::byte>> try_recv_msg() noexcept;
-    [[nodiscard]] std::error_code service() noexcept;
+    [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;
 
@@ -89,8 +89,8 @@ std::optional<std::span<const std::byte>> client::try_recv_msg() noexcept {
     return impl_->try_recv_msg();
 }
 
-std::error_code client::service() noexcept {
-    return impl_->service();
+std::error_code client::commit() noexcept {
+    return impl_->commit();
 }
 
 bool client::logout() noexcept {
@@ -107,7 +107,7 @@ size_t client::sequence_num() const noexcept {
 
 // ---------------- definition ----------------
 
-std::error_code client::impl::service() noexcept {
+std::error_code client::impl::commit() noexcept {
     const auto now = std::chrono::steady_clock::now();
 
     // Receive data.
