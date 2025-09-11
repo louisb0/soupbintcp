@@ -1,5 +1,7 @@
 # soupbintcp
-A C++ implementation of NASDAQ's SoupBinTCP protocol defined at [https://www.nasdaq.com/docs/SoupBinTCP%204.0.pdf](https://www.nasdaq.com/docs/SoupBinTCP%204.0.pdf).
+A C++ implementation of NASDAQ's SoupBinTCP protocol defined at [https://www.nasdaq.com/docs/SoupBinTCP%204.0.pdf](https://www.nasdaq.com/docs/SoupBinTCP%204.0.pdf), complete with a Wireshark dissector and profile as seen below.
+
+![wireshark profile](./wireshark/example.png)
 
 ## Examples
 

@@ -13,7 +13,7 @@ bool handle_auth(std::string_view username, std::string_view password) {
     return username == "user" && password == "letmein";
 }
 
-void handle_data(std::span<const std::byte> data) {
+void handle_data(std::span<const std::byte> data) { // NOLINT
     // TODO
 }
 

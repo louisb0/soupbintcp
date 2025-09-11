@@ -28,6 +28,9 @@
 
   scripts = {
     setup.exec = ''
+      mkdir -p ~/.local/lib/wireshark/plugins/
+      ln -sf $PWD/wireshark/dissector.lua ~/.local/lib/wireshark/plugins/dissector.lua
+
       BUILD_TYPE=''${1:-Debug}
       cmake -B build -S . -DCMAKE_BUILD_TYPE=$BUILD_TYPE
     '';
