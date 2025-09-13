@@ -103,6 +103,7 @@ void response::queue_seq_msg(std::span<const std::byte> data) noexcept {
 std::error_code server::impl::run() noexcept {
     clients_to_drop_.reserve(SOUPBIN_S_CLIENTS_PER_TICK);
 
+    std::error_code fatal;
     while (true) {
         ASSERT(clients_to_drop_.empty());
 
@@ -119,19 +120,19 @@ std::error_code server::impl::run() noexcept {
             ASSERT(c != nullptr);
             ASSERT(c->in_use());
 
-            if (auto fatal = handle_client(c); fatal) {
-                return fatal;
+            if (fatal = handle_client(c); fatal) {
+                goto shutdown;
             }
 
             c->last_recv = std::chrono::steady_clock::now();
         }
 
-        if (auto fatal = service_heartbeats(); fatal) {
-            return fatal;
+        if (fatal = service_heartbeats(); fatal) {
+            break;
         }
 
-        if (auto fatal = service_client_queue(); fatal) {
-            return fatal;
+        if (fatal = service_client_queue(); fatal) {
+            break;
         }
 
         if (!clients_to_drop_.empty()) {
@@ -148,11 +149,26 @@ std::error_code server::impl::run() noexcept {
             clients_to_drop_.clear();
         }
 
+        if (client_mgr_.authenticated().size() > 0) {
+            fatal = make_soupbin_error(errc::shutdown_tick);
+            break;
+        }
+
         bool success = cfg_.on_tick();
         if (!success) {
-            return make_soupbin_error(errc::shutdown_tick);
+            fatal = make_soupbin_error(errc::shutdown_tick);
+            break;
         }
     }
+
+// NOTE: Frowned upon but I think this is more understandable than nested conditional management of a 'running' state.
+shutdown:
+    detail::msg_end_of_session msg = detail::msg_end_of_session::build();
+    for (auto *c : client_mgr_.authenticated()) {
+        (void)send(c->fd, &msg, sizeof(msg), 0);
+    }
+
+    return fatal;
 }
 
 std::error_code server::impl::handle_client(detail::client *c) noexcept {

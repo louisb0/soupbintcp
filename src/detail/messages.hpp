@@ -186,6 +186,18 @@ struct __attribute__((packed)) msg_logout_request {
     }
 };
 
+struct __attribute__((packed)) msg_end_of_session {
+    msg_header hdr;
+
+    [[nodiscard]] static msg_end_of_session build() {
+        msg_end_of_session msg{};
+        msg.hdr.length = htons(0);
+        msg.hdr.type = mt_end_of_session;
+
+        return msg;
+    }
+};
+
 // NOLINTEND(*-c-arrays)
 
 // -------------- bounds --------------
@@ -204,6 +216,7 @@ static inline constexpr size_t max_server_message_size = std::max({
     sizeof(msg_server_heartbeat),
     sizeof(msg_unsequenced),
     sizeof(msg_sequenced),
+    sizeof(msg_end_of_session),
 });
 
 static inline constexpr size_t max_message_size = std::max({ max_client_message_size, max_server_message_size });

@@ -23,6 +23,7 @@ enum class errc : uint8_t {
     server_disconnect,
     shutdown_tick,
     logged_out,
+    end_of_session,
     protocol,
 };
 
@@ -57,6 +58,8 @@ struct soupbin_category_t final : std::error_category {
             return "the on_tick() callback requested a shutdown";
         case errc::logged_out:
             return "attempted to perform an action on a logged out client";
+        case errc::end_of_session:
+            return "server ended the session";
         case errc::protocol:
             return "a message was received which did not adhere to protocol";
         default:

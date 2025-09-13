@@ -34,6 +34,7 @@ namespace soupbin {
 class client::impl {
     int fd_;
     bool logged_in_{ true };
+    bool active_session_{ true };
 
     std::vector<std::byte> send_queue_;
     struct {
@@ -111,6 +112,10 @@ std::error_code client::logout() noexcept {
 std::error_code client::impl::commit() noexcept {
     if (!logged_in_) {
         return make_soupbin_error(errc::logged_out);
+    }
+
+    if (!active_session_) {
+        return make_soupbin_error(errc::end_of_session);
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -206,7 +211,8 @@ void client::impl::queue_debug_msg(std::span<const std::byte> data) noexcept {
 }
 
 std::optional<soupbin::server_message> client::impl::try_recv_msg() noexcept {
-    while (true) {
+    bool processing = true;
+    while (processing) {
         // Check that there is a message.
         const size_t available = recv_queue_.buffer.size() - recv_queue_.consumed;
         if (available < sizeof(detail::msg_header)) {
@@ -244,12 +250,17 @@ std::optional<soupbin::server_message> client::impl::try_recv_msg() noexcept {
             return soupbin::server_message{ .type = soupbin::server_message::type::sequenced, .payload = payload };
         }
 
+        case detail::mt_end_of_session: {
+            processing = false;
+            active_session_ = false;
+            break;
+        }
+
         // NOTE: This is handled implicitly by setting last_recv_ on any data.
         case detail::mt_server_heartbeat: {
             break;
         }
 
-        case detail::mt_end_of_session: // TODO
         case detail::mt_login_accepted:
         case detail::mt_login_rejected:
         case detail::mt_login_request:
