@@ -52,15 +52,15 @@ public:
     client &operator=(const client &) = delete;
     ~client();
 
+    [[nodiscard]] const std::string &session_id() const noexcept;
+    [[nodiscard]] size_t sequence_num() const noexcept;
+
     void queue_unseq_msg(std::span<const std::byte>) noexcept;
     void queue_debug_msg(std::span<const std::byte>) noexcept;
     [[nodiscard]] std::optional<server_message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
-    [[nodiscard]] bool logout() noexcept;
-
-    [[nodiscard]] const std::string &session_id() const noexcept;
-    [[nodiscard]] size_t sequence_num() const noexcept;
+    [[nodiscard]] std::error_code logout() noexcept;
 
 private:
     class impl;

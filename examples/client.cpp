@@ -14,7 +14,7 @@ int main() {
         .hostname = "localhost",
         .port = "8888",
         .username = "user",
-        .password = "letmein",
+        .password = "pass",
         // .session_id = "5cee2d90e1",
         // .sequence_num = "0",
     });
@@ -25,7 +25,7 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    while (true) {
+    for (int i = 0; i < 5; i++) { // NOLINT
         while (auto msg = client->try_recv_msg()) {
             switch (msg->type) {
             case soupbin::server_message::type::debug:
@@ -54,4 +54,12 @@ int main() {
 
         sleep(1);
     }
+
+    if (auto err = client->logout(); err) {
+        std::cout << "Could not logout - [" << err.category().name() << "]: " << err.message() << '\n';
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "Press Enter to exit...";
+    std::cin.get();
 }

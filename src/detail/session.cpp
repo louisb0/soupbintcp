@@ -31,14 +31,11 @@ std::error_code session::replay(detail::client *c, size_t from_seq) {
 }
 
 void session::add_seq_msg(std::span<const std::byte> data) noexcept {
-    const detail::msg_header hdr{
-        .length = htons(static_cast<uint16_t>(data.size())),
-        .type = detail::mt_sequenced,
-    };
-    const auto *hdr_bytes = reinterpret_cast<const std::byte *>(&hdr);
+    const detail::msg_sequenced msg = detail::msg_sequenced::build(data.size());
+    const auto *msg_bytes = reinterpret_cast<const std::byte *>(&msg);
 
     msg_offsets_.push_back(msg_buffer_.size());
-    msg_buffer_.insert(msg_buffer_.end(), hdr_bytes, hdr_bytes + sizeof(hdr));
+    msg_buffer_.insert(msg_buffer_.end(), msg_bytes, msg_bytes + sizeof(msg));
     msg_buffer_.insert(msg_buffer_.end(), data.begin(), data.end());
 }
 

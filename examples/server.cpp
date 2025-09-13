@@ -9,7 +9,7 @@
 
 bool handle_auth(std::string_view username, std::string_view password) {
     (void)username;
-    return password == "letmein";
+    return password == "pass";
 }
 
 void handle_msg(soupbin::response res, soupbin::client_message msg) {

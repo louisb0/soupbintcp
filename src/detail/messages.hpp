@@ -161,6 +161,31 @@ struct __attribute__((packed)) msg_unsequenced {
     }
 };
 
+struct __attribute__((packed)) msg_sequenced {
+    msg_header hdr;
+    std::byte data[];
+
+    [[nodiscard]] static msg_sequenced build(size_t payload_size) {
+        msg_sequenced msg{};
+        msg.hdr.length = htons(payload_size);
+        msg.hdr.type = mt_sequenced;
+
+        return msg;
+    }
+};
+
+struct __attribute__((packed)) msg_logout_request {
+    msg_header hdr;
+
+    [[nodiscard]] static msg_logout_request build() {
+        msg_logout_request msg{};
+        msg.hdr.length = htons(0);
+        msg.hdr.type = mt_logout_request;
+
+        return msg;
+    }
+};
+
 // NOLINTEND(*-c-arrays)
 
 // -------------- bounds --------------
@@ -178,6 +203,7 @@ static inline constexpr size_t max_server_message_size = std::max({
     sizeof(msg_login_rejected),
     sizeof(msg_server_heartbeat),
     sizeof(msg_unsequenced),
+    sizeof(msg_sequenced),
 });
 
 static inline constexpr size_t max_message_size = std::max({ max_client_message_size, max_server_message_size });

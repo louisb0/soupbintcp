@@ -33,6 +33,7 @@ namespace soupbin {
 
 class client::impl {
     int fd_;
+    bool logged_in_{ true };
 
     std::vector<std::byte> send_queue_;
     struct {
@@ -61,21 +62,29 @@ public:
     impl(impl &&) = delete;
     impl &operator=(impl &&) = delete;
 
+    [[nodiscard]] const std::string &session_id() const noexcept { return session_id_; }
+    [[nodiscard]] size_t sequence_num() const noexcept { return sequence_num_; }
+
     void queue_unseq_msg(std::span<const std::byte> data) noexcept;
     void queue_debug_msg(std::span<const std::byte> data) noexcept;
     [[nodiscard]] std::optional<soupbin::server_message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
-    [[nodiscard]] bool logout() noexcept;
-
-    [[nodiscard]] const std::string &session_id() const noexcept { return session_id_; }
-    [[nodiscard]] size_t sequence_num() const noexcept { return sequence_num_; }
+    [[nodiscard]] std::error_code logout() noexcept;
 };
 
 client::client(std::unique_ptr<impl> p) : impl_(std::move(p)) {}
 client::client(client &&other) noexcept : impl_(std::move(other.impl_)) {}
 client &client::operator=(client &&) noexcept = default;
 client::~client() = default;
+
+const std::string &client::session_id() const noexcept {
+    return impl_->session_id();
+}
+
+size_t client::sequence_num() const noexcept {
+    return impl_->sequence_num();
+}
 
 void client::queue_unseq_msg(std::span<const std::byte> data) noexcept {
     impl_->queue_unseq_msg(data);
@@ -93,21 +102,17 @@ std::error_code client::commit() noexcept {
     return impl_->commit();
 }
 
-bool client::logout() noexcept {
+std::error_code client::logout() noexcept {
     return impl_->logout();
-}
-
-const std::string &client::session_id() const noexcept {
-    return impl_->session_id();
-}
-
-size_t client::sequence_num() const noexcept {
-    return impl_->sequence_num();
 }
 
 // ---------------- definition ----------------
 
 std::error_code client::impl::commit() noexcept {
+    if (!logged_in_) {
+        return make_soupbin_error(errc::logged_out);
+    }
+
     const auto now = std::chrono::steady_clock::now();
 
     // Receive data.
@@ -264,8 +269,21 @@ std::optional<soupbin::server_message> client::impl::try_recv_msg() noexcept {
     return std::nullopt;
 }
 
-bool client::impl::logout() noexcept { // NOLINT
-    return false;
+std::error_code client::impl::logout() noexcept {
+    if (!logged_in_) {
+        return make_soupbin_error(errc::logged_out);
+    }
+
+    detail::msg_logout_request msg = detail::msg_logout_request::build();
+    if (send(fd_, &msg, sizeof(msg), 0) == -1) {
+        LOG_CRITICAL("failed to send() logout to server.");
+        return { errno, std::system_category() };
+    }
+
+    // NOTE: fd close is left to client destructor - not ideal.
+    logged_in_ = false;
+
+    return {};
 }
 
 // ---------------- factory ----------------

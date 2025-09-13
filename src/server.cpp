@@ -18,6 +18,7 @@
 #include <cstring>
 #include <system_error>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -42,8 +43,7 @@ class server::impl {
 
     detail::client_manager client_mgr_;
     std::unordered_map<std::string, detail::session> sessions_;
-
-    std::vector<detail::client *> clients_to_drop_;
+    std::unordered_set<detail::client *> clients_to_drop_;
 
 public:
     impl(int efd, int lfd, server_config &&cfg) noexcept : efd_(efd), lfd_(lfd), cfg_(std::move(cfg)) {
@@ -91,6 +91,12 @@ void response::queue_unseq_msg(std::span<const std::byte> data) noexcept {
 void response::queue_seq_msg(std::span<const std::byte> data) noexcept {
     session_->add_seq_msg(data);
 }
+
+// todo:
+// implement logout()
+// call end of session to all clients when server shuts down / receives error
+// integration tests for common flows
+// general profile
 
 // ---------------- definition ---------------
 
@@ -178,14 +184,14 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
             }
 
             LOG_CRITICAL("client(fd={}) failed unauthenticated recv(), added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             return { errno, std::system_category() };
         }
 
         if (bytes == 0) {
             LOG_WARN("client(fd={}) disconnected prior to sending their login request, added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             return {};
         }
@@ -202,7 +208,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
     const auto *msg = reinterpret_cast<const detail::msg_login_request *>(buffer.data());
     if (msg->hdr.type != detail::mt_login_request) {
         LOG_WARN("client(fd={}) login request packet is of wrong message type, added to drop list.", c->fd);
-        clients_to_drop_.push_back(c);
+        clients_to_drop_.insert(c);
 
         return {};
     }
@@ -218,7 +224,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
     bool validated = cfg_.on_auth(username, password);
     if (!validated) {
         LOG_WARN("mt_login_request: client(fd={}) is not authenticated, added to drop list.", c->fd);
-        clients_to_drop_.push_back(c);
+        clients_to_drop_.insert(c);
 
         const detail::msg_login_rejected res = detail::msg_login_rejected::build(detail::rej_not_authenticated);
         if (send(c->fd, &res, sizeof(res), 0) == -1) {
@@ -242,7 +248,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
 
         if (!session_exists || !correct_owner || !valid_sequence) {
             LOG_WARN("mt_login_request: client(fd={}) is authenticated but specified invalid session, added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             const detail::msg_login_rejected res = detail::msg_login_rejected::build(detail::rej_no_session);
             if (send(c->fd, &res, sizeof(res), 0) == -1) {
@@ -266,7 +272,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
     detail::msg_login_accepted res = detail::msg_login_accepted::build(session_id, { msg->sequence_num, detail::sequence_num_len });
     if (send(c->fd, &res, sizeof(res), 0) == -1) {
         LOG_CRITICAL("client(fd={}) failed to send() msg_login_accepted, added to drop list.", c->fd);
-        clients_to_drop_.push_back(c);
+        clients_to_drop_.insert(c);
 
         return { errno, std::system_category() };
     }
@@ -274,7 +280,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
     // Replay.
     if (auto err = c->session->replay(c, sequence_num); err) {
         LOG_CRITICAL("client(fd={}) failed to sync_client(), added to drop list.", c->fd);
-        clients_to_drop_.push_back(c);
+        clients_to_drop_.insert(c);
 
         return err;
     }
@@ -300,20 +306,20 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
 
             if (errno == ECONNRESET || errno == ECONNABORTED || errno == EPIPE) {
                 LOG_INFO("client(fd={}) disconnected abruptly, added to drop list.", c->fd);
-                clients_to_drop_.push_back(c);
+                clients_to_drop_.insert(c);
 
                 break;
             }
 
             LOG_CRITICAL("client(fd={}) failed authenticated recv(), added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             return { errno, std::system_category() };
         }
 
         if (bytes == 0) {
             LOG_INFO("client(fd={}) closed their connection, added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             break;
         }
@@ -365,12 +371,18 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
             break;
         }
 
+        case detail::mt_logout_request: {
+            LOG_INFO("mt_logout_request: client(fd={}) requested logout, added to drop list.", c->fd);
+            clients_to_drop_.insert(c);
+            window = window.first(total_msg_size); // Ignore any further data.
+            break;
+        }
+
         // NOTE: This is handled implicitly by setting last_recv on any data.
         case detail::mt_client_heartbeat: {
             break;
         }
 
-        case detail::mt_logout_request: // TODO
         case detail::mt_login_accepted:
         case detail::mt_login_rejected:
         case detail::mt_sequenced:
@@ -378,13 +390,13 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
         case detail::mt_end_of_session:
         case detail::mt_login_request: {
             LOG_WARN("client(fd={}) sent unexpected message type (mt={}), added to drop list.", c->fd, static_cast<char>(hdr->type));
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
             break;
         }
 
         default: {
             LOG_WARN("client(fd={}) sent unknown message type (mt={}), added to drop list.", c->fd, static_cast<char>(hdr->type));
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
             break;
         }
         }
@@ -407,7 +419,7 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
 
         if (writev(c->fd, iov.data(), iov.size()) == -1) {
             LOG_CRITICAL("client(fd={}) failed to writev() unsequenced buffer, added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             return { errno, std::system_category() };
         }
@@ -416,7 +428,7 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
     if (c->session->sequence_num() > prior_seq_num) {
         if (auto err = c->session->replay(c, prior_seq_num); err) {
             LOG_CRITICAL("client(fd={}) failed to sync_client(), added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             return err;
         }
@@ -435,7 +447,7 @@ std::error_code server::impl::service_heartbeats() noexcept {
 
         if (now - c->last_recv >= std::chrono::seconds(SOUPBIN_S_CLIENT_HEARTBEAT_SEC)) {
             LOG_INFO("client(fd={}) failed heartbeat check", c->fd);
-            clients_to_drop_.push_back(c);
+            clients_to_drop_.insert(c);
 
             continue;
         }
@@ -447,7 +459,7 @@ std::error_code server::impl::service_heartbeats() noexcept {
 
             if (send(c->fd, &msg, sizeof(msg), 0) == -1) {
                 LOG_CRITICAL("client(fd={}) failed to send() msg_server_heartbeat, added to drop list.", c->fd);
-                clients_to_drop_.push_back(c);
+                clients_to_drop_.insert(c);
 
                 return { errno, std::system_category() };
             }

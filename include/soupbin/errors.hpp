@@ -22,6 +22,7 @@ enum class errc : uint8_t {
     server_heartbeat,
     server_disconnect,
     shutdown_tick,
+    logged_out,
     protocol,
 };
 
@@ -52,10 +53,12 @@ struct soupbin_category_t final : std::error_category {
             return "server did not send data within heartbeat period";
         case errc::server_disconnect:
             return "server deliberately closed the connection";
-        case errc::protocol:
-            return "a message was received which did not adhere to protocol";
         case errc::shutdown_tick:
             return "the on_tick() callback requested a shutdown";
+        case errc::logged_out:
+            return "attempted to perform an action on a logged out client";
+        case errc::protocol:
+            return "a message was received which did not adhere to protocol";
         default:
             return "unknown";
         }
