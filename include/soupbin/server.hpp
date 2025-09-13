@@ -38,9 +38,16 @@ namespace detail {
 }
 class response;
 
+struct client_message {
+    enum class type : uint8_t {
+        debug,
+        unsequenced,
+    } type;
+    std::span<const std::byte> payload;
+};
+
 using auth_handler = std::function<bool(std::string_view, std::string_view)>;
-using debug_handler = std::function<void(std::span<const std::byte>)>;
-using unseq_msg_handler = std::function<void(soupbin::response, std::span<const std::byte>)>;
+using msg_handler = std::function<void(soupbin::response, client_message)>;
 using tick_handler = std::function<bool()>;
 
 struct server_config {
@@ -49,8 +56,7 @@ struct server_config {
     std::chrono::milliseconds tick{ 0 };
 
     auth_handler on_auth;
-    unseq_msg_handler on_unseq_msg;
-    debug_handler on_debug;
+    msg_handler on_msg;
     tick_handler on_tick;
 };
 

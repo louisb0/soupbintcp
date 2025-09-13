@@ -26,19 +26,17 @@ int main() {
     }
 
     while (true) {
-        client->queue_unseq_msg(std::as_bytes(std::span("ping")));
-
         while (auto msg = client->try_recv_msg()) {
             switch (msg->type) {
-            case soupbin::message::type::debug:
+            case soupbin::server_message::type::debug:
                 std::cout << "Debug: ";
                 break;
 
-            case soupbin::message::type::unsequenced:
+            case soupbin::server_message::type::unsequenced:
                 std::cout << "Unsequenced: ";
                 break;
 
-            case soupbin::message::type::sequenced:
+            case soupbin::server_message::type::sequenced:
                 std::cout << "Sequenced: ";
                 break;
             }
@@ -46,6 +44,8 @@ int main() {
             auto content = std::string_view(reinterpret_cast<const char *>(msg->payload.data()), msg->payload.size());
             std::cout << content << "\n";
         }
+
+        client->queue_unseq_msg(std::as_bytes(std::span("Ping!")));
 
         if (auto err = client->commit()) {
             std::cout << "Could not commit - [" << err.category().name() << "]: " << err.message() << '\n';

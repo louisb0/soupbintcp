@@ -95,10 +95,6 @@ void response::queue_seq_msg(std::span<const std::byte> data) noexcept {
 // ---------------- definition ---------------
 
 std::error_code server::impl::run() noexcept {
-    // TODO(high-priority): We need to handle the case where a client forceably disconnects between
-    // recv(), where we would get an error or 0 bytes, and following sends(), which causes SIGPIPE.
-    signal(SIGPIPE, SIG_IGN);
-
     clients_to_drop_.reserve(SOUPBIN_S_CLIENTS_PER_TICK);
 
     while (true) {
@@ -303,7 +299,7 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
             }
 
             if (errno == ECONNRESET || errno == ECONNABORTED || errno == EPIPE) {
-                LOG_INFO("client(fd={}) disconnected abruptly ({}), added to drop list.", c->fd, strerror(errno));
+                LOG_INFO("client(fd={}) disconnected abruptly, added to drop list.", c->fd);
                 clients_to_drop_.push_back(c);
 
                 break;
@@ -347,18 +343,30 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
         switch (hdr->type) {
         case detail::mt_debug: {
             const auto *msg = reinterpret_cast<const detail::msg_debug *>(window.data());
-            cfg_.on_debug({ msg->data, ntohs(msg->hdr.length) });
+            cfg_.on_msg(
+                soupbin::response(c->session, &unseq_send_buffer),
+                soupbin::client_message{
+                    .type = soupbin::client_message::type::debug,
+                    .payload = { msg->data, ntohs(msg->hdr.length) },
+                });
+
             break;
         }
 
         case detail::mt_unsequenced: {
             const auto *msg = reinterpret_cast<const detail::msg_unsequenced *>(window.data());
-            cfg_.on_unseq_msg(soupbin::response(c->session, &unseq_send_buffer), { msg->data, ntohs(msg->hdr.length) });
+            cfg_.on_msg(
+                soupbin::response(c->session, &unseq_send_buffer),
+                soupbin::client_message{
+                    .type = soupbin::client_message::type::unsequenced,
+                    .payload = { msg->data, ntohs(msg->hdr.length) },
+                });
+
             break;
         }
 
+        // NOTE: This is handled implicitly by setting last_recv on any data.
         case detail::mt_client_heartbeat: {
-            // NOTE: This is handled implicitly by setting last_recv on any data.
             break;
         }
 

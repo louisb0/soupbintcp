@@ -35,7 +35,7 @@ struct connect_config {
     std::string sequence_num = SEQ_START;
 };
 
-struct message {
+struct server_message {
     enum class type : uint8_t {
         debug,
         unsequenced,
@@ -54,7 +54,7 @@ public:
 
     void queue_unseq_msg(std::span<const std::byte>) noexcept;
     void queue_debug_msg(std::span<const std::byte>) noexcept;
-    [[nodiscard]] std::optional<message> try_recv_msg() noexcept;
+    [[nodiscard]] std::optional<server_message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;

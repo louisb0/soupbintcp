@@ -63,7 +63,7 @@ public:
 
     void queue_unseq_msg(std::span<const std::byte> data) noexcept;
     void queue_debug_msg(std::span<const std::byte> data) noexcept;
-    [[nodiscard]] std::optional<soupbin::message> try_recv_msg() noexcept;
+    [[nodiscard]] std::optional<soupbin::server_message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;
@@ -85,7 +85,7 @@ void client::queue_debug_msg(std::span<const std::byte> data) noexcept {
     impl_->queue_debug_msg(data);
 }
 
-std::optional<soupbin::message> client::try_recv_msg() noexcept {
+std::optional<soupbin::server_message> client::try_recv_msg() noexcept {
     return impl_->try_recv_msg();
 }
 
@@ -200,7 +200,7 @@ void client::impl::queue_debug_msg(std::span<const std::byte> data) noexcept {
     send_queue_.insert(send_queue_.end(), data.begin(), data.end());
 }
 
-std::optional<soupbin::message> client::impl::try_recv_msg() noexcept {
+std::optional<soupbin::server_message> client::impl::try_recv_msg() noexcept {
     while (true) {
         // Check that there is a message.
         const size_t available = recv_queue_.buffer.size() - recv_queue_.consumed;
@@ -227,20 +227,20 @@ std::optional<soupbin::message> client::impl::try_recv_msg() noexcept {
         // Process message.
         switch (hdr->type) {
         case detail::mt_debug: {
-            return soupbin::message{ .type = soupbin::message::type::debug, .payload = payload };
+            return soupbin::server_message{ .type = soupbin::server_message::type::debug, .payload = payload };
         }
 
         case detail::mt_unsequenced: {
-            return soupbin::message{ .type = soupbin::message::type::unsequenced, .payload = payload };
+            return soupbin::server_message{ .type = soupbin::server_message::type::unsequenced, .payload = payload };
         }
 
         case detail::mt_sequenced: {
             sequence_num_++;
-            return soupbin::message{ .type = soupbin::message::type::sequenced, .payload = payload };
+            return soupbin::server_message{ .type = soupbin::server_message::type::sequenced, .payload = payload };
         }
 
+        // NOTE: This is handled implicitly by setting last_recv_ on any data.
         case detail::mt_server_heartbeat: {
-            // NOTE: This is handled implicitly by setting last_recv_ on any data.
             break;
         }
 
