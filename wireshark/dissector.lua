@@ -133,7 +133,7 @@ local message_info = {
         name = "End of Session",
         dissector = function(buffer, pinfo, tree, stream_num)
             conversations[stream_num] = nil
-            return "[EndofSession]"
+            return "[EndOfSession]"
         end
     },
     [MSG_LOGOUT_REQUEST] = {
