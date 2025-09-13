@@ -7,23 +7,23 @@
 #include <iostream>
 #include <span>
 #include <string_view>
-#include <system_error>
 
 bool handle_auth(std::string_view username, std::string_view password) {
-    return username == "user" && password == "letmein";
+    (void)username;
+    return password == "letmein";
 }
 
-void handle_data(std::span<const std::byte> data) { // NOLINT
-    // TODO
+void handle_unseq_msg(soupbin::response res, std::span<const std::byte> msg) {
+    std::cout << "Unsequenced: " << std::string_view(reinterpret_cast<const char *>(msg.data()), msg.size()) << '\n';
+
+    res.queue_seq_msg(std::as_bytes(std::span("Pong!")));
 }
 
-void handle_debug(std::span<const std::byte> data) {
-    std::string_view str(reinterpret_cast<const char *>(data.data()), data.size());
-    std::cout << "Received: " << str << '\n';
+void handle_debug(std::span<const std::byte> msg) {
+    std::cout << "Debug: " << std::string_view(reinterpret_cast<const char *>(msg.data()), msg.size()) << '\n';
 }
 
 bool handle_tick() {
-    // TODO
     return true;
 }
 
@@ -33,7 +33,7 @@ int main() {
         .port = "8888",
         .tick = std::chrono::milliseconds(1),
         .on_auth = handle_auth,
-        .on_data = handle_data,
+        .on_unseq_msg = handle_unseq_msg,
         .on_debug = handle_debug,
         .on_tick = handle_tick,
     });

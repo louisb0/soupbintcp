@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -34,6 +35,15 @@ struct connect_config {
     std::string sequence_num = SEQ_START;
 };
 
+struct message {
+    enum class type : uint8_t {
+        debug,
+        unsequenced,
+        sequenced
+    } type;
+    std::span<const std::byte> payload;
+};
+
 class client {
 public:
     client(client &&) noexcept;
@@ -44,7 +54,7 @@ public:
 
     void queue_unseq_msg(std::span<const std::byte>) noexcept;
     void queue_debug_msg(std::span<const std::byte>) noexcept;
-    [[nodiscard]] std::optional<std::span<const std::byte>> try_recv_msg() noexcept;
+    [[nodiscard]] std::optional<message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;

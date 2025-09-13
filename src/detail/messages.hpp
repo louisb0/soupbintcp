@@ -41,7 +41,7 @@ enum message_type : uint8_t {
 };
 
 enum login_reject_code : uint8_t {
-    rej_not_authorised = 'A',
+    rej_not_authenticated = 'A',
     rej_no_session = 'S',
 };
 
@@ -56,6 +56,14 @@ struct __attribute__((packed)) msg_header {
 struct __attribute__((packed)) msg_debug {
     msg_header hdr;
     std::byte data[];
+
+    [[nodiscard]] static msg_debug build(size_t payload_size) {
+        msg_debug msg{};
+        msg.hdr.length = htons(payload_size);
+        msg.hdr.type = mt_debug;
+
+        return msg;
+    }
 };
 
 struct __attribute__((packed)) msg_login_request {
@@ -71,7 +79,7 @@ struct __attribute__((packed)) msg_login_request {
         ASSERT(!cfg.session_id.empty() && cfg.session_id.length() <= detail::session_id_len);
         ASSERT(!cfg.sequence_num.empty() && cfg.sequence_num.length() <= detail::sequence_num_len);
 
-        detail::msg_login_request msg{};
+        msg_login_request msg{};
         msg.hdr.length = htons(sizeof(msg) - sizeof(msg.hdr));
         msg.hdr.type = detail::mt_login_request;
         detail::pad_field_right(msg.username, detail::username_len, cfg.username);
@@ -88,12 +96,15 @@ struct __attribute__((packed)) msg_login_accepted {
     char session_id[session_id_len];
     char sequence_num[sequence_num_len];
 
-    [[nodiscard]] static msg_login_accepted build(const msg_login_request *req) {
+    [[nodiscard]] static msg_login_accepted build(std::string_view session_id, std::string_view sequence_num) {
+        ASSERT(session_id.length() == session_id_len);
+        ASSERT(sequence_num.length() == sequence_num_len);
+
         msg_login_accepted msg{};
         msg.hdr.length = htons(sizeof(msg) - sizeof(msg.hdr));
-        msg.hdr.type = mt_login_accepted;
-        std::memcpy(msg.session_id, req->session_id, session_id_len);
-        std::memcpy(msg.sequence_num, req->sequence_num, sequence_num_len);
+        msg.hdr.type = detail::mt_login_accepted;
+        std::memcpy(msg.session_id, session_id.data(), detail::session_id_len);
+        std::memcpy(msg.sequence_num, sequence_num.data(), detail::sequence_num_len);
 
         return msg;
     }
@@ -137,6 +148,19 @@ struct __attribute__((packed)) msg_server_heartbeat {
     }
 };
 
+struct __attribute__((packed)) msg_unsequenced {
+    msg_header hdr;
+    std::byte data[];
+
+    [[nodiscard]] static msg_unsequenced build(size_t payload_size) {
+        msg_unsequenced msg{};
+        msg.hdr.length = htons(payload_size);
+        msg.hdr.type = mt_unsequenced;
+
+        return msg;
+    }
+};
+
 // NOLINTEND(*-c-arrays)
 
 // -------------- bounds --------------
@@ -145,6 +169,7 @@ static inline constexpr size_t max_client_message_size = std::max({
     sizeof(msg_debug),
     sizeof(msg_login_request),
     sizeof(msg_client_heartbeat),
+    sizeof(msg_unsequenced),
 });
 
 static inline constexpr size_t max_server_message_size = std::max({
@@ -152,6 +177,7 @@ static inline constexpr size_t max_server_message_size = std::max({
     sizeof(msg_login_accepted),
     sizeof(msg_login_rejected),
     sizeof(msg_server_heartbeat),
+    sizeof(msg_unsequenced),
 });
 
 static inline constexpr size_t max_message_size = std::max({ max_client_message_size, max_server_message_size });

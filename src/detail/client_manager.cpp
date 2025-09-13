@@ -2,7 +2,6 @@
 
 #include "detail/assert.hpp"
 
-#include <cstddef>
 #include <span>
 #include <utility>
 
@@ -18,11 +17,12 @@ client *client_manager::add(int fd) noexcept {
     return &it->second;
 }
 
-void client_manager::authenticate(client *c) noexcept {
+void client_manager::authenticate(client *c, detail::session *s) noexcept {
     ASSERT(c->in_use());
     ASSERT(!c->authenticated());
     ASSERT(&store_[c->fd] == c);
 
+    c->session = s;
     c->auth_index = static_cast<int>(authenticated_.size());
     authenticated_.push_back(c);
 }
@@ -32,9 +32,8 @@ void client_manager::remove(client *c) noexcept {
     ASSERT(&store_[c->fd] == c);
 
     if (c->authenticated()) {
-        ASSERT(c->auth_index >= 0);
-        ASSERT(static_cast<size_t>(c->auth_index) < authenticated_.size());
         ASSERT(authenticated_[c->auth_index] == c);
+        ASSERT(c->session != nullptr);
 
         client *tail = authenticated_.back();
 
@@ -49,15 +48,13 @@ void client_manager::remove(client *c) noexcept {
 }
 
 std::span<client *> client_manager::authenticated() noexcept {
-#ifndef NDEBUG
     for (const auto *c : authenticated_) {
+        DEBUG_ASSERT(c != nullptr);
         DEBUG_ASSERT(c->in_use());
         DEBUG_ASSERT(c->authenticated());
-        DEBUG_ASSERT(c->auth_index >= 0);
-        DEBUG_ASSERT(static_cast<size_t>(c->auth_index) < authenticated_.size());
         DEBUG_ASSERT(authenticated_[c->auth_index] == c);
+        DEBUG_ASSERT(c->session != nullptr);
     }
-#endif
 
     return { authenticated_.data(), authenticated_.size() };
 }

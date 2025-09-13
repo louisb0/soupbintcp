@@ -21,6 +21,7 @@ enum class errc : uint8_t {
     no_such_session,
     server_heartbeat,
     server_disconnect,
+    shutdown_tick,
     protocol,
 };
 
@@ -53,6 +54,8 @@ struct soupbin_category_t final : std::error_category {
             return "server deliberately closed the connection";
         case errc::protocol:
             return "a message was received which did not adhere to protocol";
+        case errc::shutdown_tick:
+            return "the on_tick() callback requested a shutdown";
         default:
             return "unknown";
         }

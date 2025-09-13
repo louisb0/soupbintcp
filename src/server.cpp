@@ -7,14 +7,17 @@
 #include "detail/log.hpp"
 #include "detail/messages.hpp"
 #include "detail/partial.hpp"
+#include "detail/session.hpp"
 #include "detail/util.hpp"
 
 #include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <cstring>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -25,6 +28,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 namespace soupbin {
@@ -37,6 +41,8 @@ class server::impl {
     server_config cfg_;
 
     detail::client_manager client_mgr_;
+    std::unordered_map<std::string, detail::session> sessions_;
+
     std::vector<detail::client *> clients_to_drop_;
 
 public:
@@ -78,6 +84,14 @@ server::~server() noexcept = default;
 
 std::error_code server::run() noexcept { return impl_->run(); }
 
+void response::queue_unseq_msg(std::span<const std::byte> data) noexcept {
+    unseq_buffer_->insert(unseq_buffer_->end(), data.begin(), data.end());
+}
+
+void response::queue_seq_msg(std::span<const std::byte> data) noexcept {
+    session_->add_seq_msg(data);
+}
+
 // ---------------- definition ---------------
 
 std::error_code server::impl::run() noexcept {
@@ -85,7 +99,9 @@ std::error_code server::impl::run() noexcept {
     // recv(), where we would get an error or 0 bytes, and following sends(), which causes SIGPIPE.
     signal(SIGPIPE, SIG_IGN);
 
-    for (;;) {
+    clients_to_drop_.reserve(SOUPBIN_S_CLIENTS_PER_TICK);
+
+    while (true) {
         ASSERT(clients_to_drop_.empty());
 
         std::array<epoll_event, SOUPBIN_S_CLIENTS_PER_TICK> events{};
@@ -128,6 +144,11 @@ std::error_code server::impl::run() noexcept {
 
             LOG_INFO("dropped {} client(s).", clients_to_drop_.size());
             clients_to_drop_.clear();
+        }
+
+        bool success = cfg_.on_tick();
+        if (!success) {
+            return make_soupbin_error(errc::shutdown_tick);
         }
     }
 }
@@ -176,14 +197,13 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
         read += bytes;
     }
 
-    // Check for partial.
     if (read != buffer.size()) {
         c->partial.store({ buffer.data(), read });
         return {};
     }
 
-    // Check for expected message type.
-    auto *msg = reinterpret_cast<detail::msg_login_request *>(buffer.data());
+    // Parse and validate message format.
+    const auto *msg = reinterpret_cast<const detail::msg_login_request *>(buffer.data());
     if (msg->hdr.type != detail::mt_login_request) {
         LOG_WARN("client(fd={}) login request packet is of wrong message type, added to drop list.", c->fd);
         clients_to_drop_.push_back(c);
@@ -191,31 +211,76 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
         return {};
     }
 
-    LOG_INFO("mt_login_request: client(fd={}) session_id='{}' sequence_num={}",
-             c->fd, detail::format_session_id(msg->session_id), detail::format_sequence_num(msg->sequence_num));
+    const std::string username = std::string(detail::format_username(msg->username));
+    const std::string password = std::string(detail::format_password(msg->password));
+    std::string session_id = std::string(detail::format_session_id(msg->session_id));
+    const size_t sequence_num = detail::format_sequence_num(msg->sequence_num);
 
-    // Authorise or remove the client.
-    bool authenticated = cfg_.on_auth(detail::format_username(msg->username), detail::format_password(msg->password));
-    if (authenticated) {
-        LOG_INFO("mt_login_request: client(fd={}) authenticated", c->fd);
-        client_mgr_.authenticate(c);
+    LOG_INFO("mt_login_request: client(fd={}) session_id='{}' sequence_num={}", c->fd, session_id, sequence_num);
 
-        detail::msg_login_accepted res = detail::msg_login_accepted::build(msg);
-        if (send(c->fd, &res, sizeof(res), 0) == -1) {
-            LOG_CRITICAL("client(fd={}) failed to send() msg_login_accepted, added to drop list.", c->fd);
-            clients_to_drop_.push_back(c);
-
-            return { errno, std::system_category() };
-        }
-    } else {
+    // Authenticate client credentials.
+    bool validated = cfg_.on_auth(username, password);
+    if (!validated) {
         LOG_WARN("mt_login_request: client(fd={}) is not authenticated, added to drop list.", c->fd);
         clients_to_drop_.push_back(c);
 
-        detail::msg_login_rejected res = detail::msg_login_rejected::build(detail::rej_not_authorised);
+        const detail::msg_login_rejected res = detail::msg_login_rejected::build(detail::rej_not_authenticated);
         if (send(c->fd, &res, sizeof(res), 0) == -1) {
             LOG_CRITICAL("client(fd={}) failed to send() msg_login_rejected.", c->fd);
             return { errno, std::system_category() };
         }
+
+        return {};
+    }
+
+    // Handle session - create(1) or validate(2).
+    if (session_id.empty()) {
+        session_id = detail::generate_session_id(detail::session_id_len);
+        sessions_.emplace(session_id, detail::session(username));
+    } else {
+        auto it = sessions_.find(session_id);
+
+        const bool session_exists = (it != sessions_.end());
+        const bool correct_owner = session_exists && (it->second.owner_username() == username);
+        const bool valid_sequence = session_exists && (it->second.sequence_num() >= sequence_num);
+
+        if (!session_exists || !correct_owner || !valid_sequence) {
+            LOG_WARN("mt_login_request: client(fd={}) is authenticated but specified invalid session, added to drop list.", c->fd);
+            clients_to_drop_.push_back(c);
+
+            const detail::msg_login_rejected res = detail::msg_login_rejected::build(detail::rej_no_session);
+            if (send(c->fd, &res, sizeof(res), 0) == -1) {
+                LOG_CRITICAL("client(fd={}) failed to send() msg_login_rejected.", c->fd);
+                return { errno, std::system_category() };
+            }
+
+            return {};
+        }
+    }
+
+    const auto it = sessions_.find(session_id);
+    DEBUG_ASSERT(it != sessions_.end());
+    DEBUG_ASSERT(it->second.owner_username() == username);
+
+    // Authenticate client.
+    LOG_INFO("mt_login_request: client(fd={}) authenticated with valid session.", c->fd);
+    client_mgr_.authenticate(c, &it->second);
+
+    // Reply.
+    detail::msg_login_accepted res = detail::msg_login_accepted::build(session_id, { msg->sequence_num, detail::sequence_num_len });
+    if (send(c->fd, &res, sizeof(res), 0) == -1) {
+        LOG_CRITICAL("client(fd={}) failed to send() msg_login_accepted, added to drop list.", c->fd);
+        clients_to_drop_.push_back(c);
+
+        return { errno, std::system_category() };
+    }
+
+    // Replay.
+    if (auto err = c->session->replay(c, sequence_num); err) {
+        LOG_CRITICAL("client(fd={}) failed to sync_client(), added to drop list.", c->fd);
+        clients_to_drop_.push_back(c);
+
+        return err;
     }
 
     return {};
@@ -224,6 +289,7 @@ std::error_code server::impl::handle_unauthenticated(detail::client *c) noexcept
 std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
     DEBUG_ASSERT(c->in_use());
     DEBUG_ASSERT(c->authenticated());
+    DEBUG_ASSERT(c->session != nullptr);
 
     std::array<std::byte, SOUPBIN_S_MESSAGES_PER_CLIENT * detail::max_client_message_size> buffer{};
 
@@ -259,7 +325,11 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
         read += bytes;
     }
 
-    // Parse messages.
+    // Prepare for queued messages.
+    const size_t prior_seq_num = c->session->sequence_num();
+    std::vector<std::byte> unseq_send_buffer; // TODO: Avoid dynamic allocation.
+
+    // Process messages.
     std::span<std::byte> window{ buffer.data(), read };
     while (!window.empty()) {
         if (sizeof(detail::msg_header) > window.size()) {
@@ -267,8 +337,8 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
         }
 
         const auto *hdr = reinterpret_cast<const detail::msg_header *>(window.data());
-        size_t payload_size = ntohs(hdr->length);
-        size_t total_msg_size = sizeof(detail::msg_header) + payload_size;
+        const size_t payload_size = ntohs(hdr->length);
+        const size_t total_msg_size = sizeof(detail::msg_header) + payload_size;
 
         if (total_msg_size > window.size()) {
             break;
@@ -276,8 +346,14 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
 
         switch (hdr->type) {
         case detail::mt_debug: {
-            auto *msg = reinterpret_cast<detail::msg_debug *>(window.data());
+            const auto *msg = reinterpret_cast<const detail::msg_debug *>(window.data());
             cfg_.on_debug({ msg->data, ntohs(msg->hdr.length) });
+            break;
+        }
+
+        case detail::mt_unsequenced: {
+            const auto *msg = reinterpret_cast<const detail::msg_unsequenced *>(window.data());
+            cfg_.on_unseq_msg(soupbin::response(c->session, &unseq_send_buffer), { msg->data, ntohs(msg->hdr.length) });
             break;
         }
 
@@ -286,24 +362,21 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
             break;
         }
 
-        case detail::mt_unsequenced:
-            // TODO
-        case detail::mt_logout_request:
-            // TODO
+        case detail::mt_logout_request: // TODO
         case detail::mt_login_accepted:
         case detail::mt_login_rejected:
         case detail::mt_sequenced:
         case detail::mt_server_heartbeat:
         case detail::mt_end_of_session:
         case detail::mt_login_request: {
-            // TODO: Consider dropping the client.
-            LOG_WARN("client(fd={}) sent unexpected message type (mt={})", c->fd, static_cast<char>(hdr->type));
+            LOG_WARN("client(fd={}) sent unexpected message type (mt={}), added to drop list.", c->fd, static_cast<char>(hdr->type));
+            clients_to_drop_.push_back(c);
             break;
         }
 
         default: {
-            // TODO: Consider dropping the client.
-            LOG_WARN("client(fd={}) sent unknown message type (mt={})", c->fd, static_cast<char>(hdr->type));
+            LOG_WARN("client(fd={}) sent unknown message type (mt={}), added to drop list.", c->fd, static_cast<char>(hdr->type));
+            clients_to_drop_.push_back(c);
             break;
         }
         }
@@ -313,6 +386,32 @@ std::error_code server::impl::handle_authenticated(detail::client *c) noexcept {
 
     if (!window.empty()) {
         c->partial.store(window);
+    }
+
+    // Send queued mesages.
+    if (!unseq_send_buffer.empty()) {
+        detail::msg_unsequenced msg = detail::msg_unsequenced::build(unseq_send_buffer.size());
+
+        std::array<struct iovec, 2> iov{ {
+            { .iov_base = &msg, .iov_len = sizeof(msg) },
+            { .iov_base = unseq_send_buffer.data(), .iov_len = unseq_send_buffer.size() },
+        } };
+
+        if (writev(c->fd, iov.data(), iov.size()) == -1) {
+            LOG_CRITICAL("client(fd={}) failed to writev() unsequenced buffer, added to drop list.", c->fd);
+            clients_to_drop_.push_back(c);
+
+            return { errno, std::system_category() };
+        }
+    }
+
+    if (c->session->sequence_num() > prior_seq_num) {
+        if (auto err = c->session->replay(c, prior_seq_num); err) {
+            LOG_CRITICAL("client(fd={}) failed to sync_client(), added to drop list.", c->fd);
+            clients_to_drop_.push_back(c);
+
+            return err;
+        }
     }
 
     return {};

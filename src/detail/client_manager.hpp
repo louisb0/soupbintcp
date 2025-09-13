@@ -9,10 +9,15 @@
 
 namespace soupbin::detail {
 
+class session;
+
 struct client {
     int fd{ -1 };
     int auth_index{ -1 };
+
+    detail::session *session{};
     detail::partial partial{};
+
     std::chrono::steady_clock::time_point last_recv;
     std::chrono::steady_clock::time_point last_send;
 
@@ -31,7 +36,7 @@ class client_manager {
 
 public:
     [[nodiscard]] client *add(int cfd) noexcept;
-    void authenticate(client *c) noexcept;
+    void authenticate(client *c, detail::session *s) noexcept;
     void remove(client *c) noexcept;
 
     [[nodiscard]] std::span<client *> authenticated() noexcept;

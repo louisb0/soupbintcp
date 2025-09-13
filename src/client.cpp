@@ -63,7 +63,7 @@ public:
 
     void queue_unseq_msg(std::span<const std::byte> data) noexcept;
     void queue_debug_msg(std::span<const std::byte> data) noexcept;
-    [[nodiscard]] std::optional<std::span<const std::byte>> try_recv_msg() noexcept;
+    [[nodiscard]] std::optional<soupbin::message> try_recv_msg() noexcept;
     [[nodiscard]] std::error_code commit() noexcept;
 
     [[nodiscard]] bool logout() noexcept;
@@ -85,7 +85,7 @@ void client::queue_debug_msg(std::span<const std::byte> data) noexcept {
     impl_->queue_debug_msg(data);
 }
 
-std::optional<std::span<const std::byte>> client::try_recv_msg() noexcept {
+std::optional<soupbin::message> client::try_recv_msg() noexcept {
     return impl_->try_recv_msg();
 }
 
@@ -200,9 +200,7 @@ void client::impl::queue_debug_msg(std::span<const std::byte> data) noexcept {
     send_queue_.insert(send_queue_.end(), data.begin(), data.end());
 }
 
-// TODO: It may be worth adding a message type of mt_debug or mt_sequenced to the interface. This is a little
-// awkward as message types are part of the soupbin::detail namespace, not the public header.
-std::optional<std::span<const std::byte>> client::impl::try_recv_msg() noexcept {
+std::optional<soupbin::message> client::impl::try_recv_msg() noexcept {
     while (true) {
         // Check that there is a message.
         const size_t available = recv_queue_.buffer.size() - recv_queue_.consumed;
@@ -229,13 +227,16 @@ std::optional<std::span<const std::byte>> client::impl::try_recv_msg() noexcept 
         // Process message.
         switch (hdr->type) {
         case detail::mt_debug: {
-            LOG_INFO("mt_debug: {}", std::string_view(reinterpret_cast<const char *>(payload.data()), payload.size()));
-            break;
+            return soupbin::message{ .type = soupbin::message::type::debug, .payload = payload };
+        }
+
+        case detail::mt_unsequenced: {
+            return soupbin::message{ .type = soupbin::message::type::unsequenced, .payload = payload };
         }
 
         case detail::mt_sequenced: {
             sequence_num_++;
-            return payload;
+            return soupbin::message{ .type = soupbin::message::type::sequenced, .payload = payload };
         }
 
         case detail::mt_server_heartbeat: {
@@ -243,10 +244,8 @@ std::optional<std::span<const std::byte>> client::impl::try_recv_msg() noexcept 
             break;
         }
 
-        case detail::mt_end_of_session:
-            // TODO
+        case detail::mt_end_of_session: // TODO
         case detail::mt_login_accepted:
-        case detail::mt_unsequenced:
         case detail::mt_login_rejected:
         case detail::mt_login_request:
         case detail::mt_logout_request:
@@ -397,7 +396,7 @@ std::expected<client, std::error_code> connect(const connect_config &cfg) {
     if (hdr->type == detail::mt_login_rejected) {
         const auto *msg = reinterpret_cast<const detail::msg_login_rejected *>(buffer.data());
 
-        if (msg->reason == detail::rej_not_authorised) {
+        if (msg->reason == detail::rej_not_authenticated) {
             return std::unexpected(make_soupbin_error(errc::no_such_login));
         }
 

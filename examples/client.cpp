@@ -4,7 +4,7 @@
 #include <expected>
 #include <iostream>
 #include <span>
-#include <string>
+#include <string_view>
 #include <system_error>
 
 #include <unistd.h>
@@ -15,8 +15,8 @@ int main() {
         .port = "8888",
         .username = "user",
         .password = "letmein",
-        // .session_id = "abc123",
-        // .sequence_num = "1293874",
+        // .session_id = "5cee2d90e1",
+        // .sequence_num = "0",
     });
 
     if (!client) {
@@ -26,10 +26,25 @@ int main() {
     }
 
     while (true) {
-        client->queue_debug_msg(std::as_bytes(std::span("ping")));
+        client->queue_unseq_msg(std::as_bytes(std::span("ping")));
 
         while (auto msg = client->try_recv_msg()) {
-            std::cout << "Received: " << std::string(reinterpret_cast<const char *>(msg->data()), msg->size()) << "\n";
+            switch (msg->type) {
+            case soupbin::message::type::debug:
+                std::cout << "Debug: ";
+                break;
+
+            case soupbin::message::type::unsequenced:
+                std::cout << "Unsequenced: ";
+                break;
+
+            case soupbin::message::type::sequenced:
+                std::cout << "Sequenced: ";
+                break;
+            }
+
+            auto content = std::string_view(reinterpret_cast<const char *>(msg->payload.data()), msg->payload.size());
+            std::cout << content << "\n";
         }
 
         if (auto err = client->commit()) {
